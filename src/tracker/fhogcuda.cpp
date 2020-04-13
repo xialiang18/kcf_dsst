@@ -6,7 +6,7 @@
 
 extern void fhogCudaInit(int cell_size);
 
-extern void imageGrad(char *imageData, float *dxData, float *dyData, cv::Size size);
+extern void imageGrad(unsigned char *imageData, float *dxData, float *dyData, cv::Size size);
 
 extern void maxGrad(float *dx, float *dy, float *r, int *alfa, cv::Size size, int channels);
 
@@ -155,36 +155,28 @@ int fhogFeature::getFeatureMaps(const IplImage *image, const int k, CvLSVMFeatur
 
     numChannels = image->nChannels;
     cudaError_t err = cudaSuccess;
-    //std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
-    err = cudaMemcpy(imageData1, image->imageData, sizeof(char) * image->imageSize, cudaMemcpyHostToDevice);
+
+//Timer_Begin(cudaMemcpy);
+    err = cudaMemcpyAsync(imageData1, image->imageData, sizeof(char) * image->imageSize, cudaMemcpyHostToDevice);
     if(err != cudaSuccess){
         fprintf(stderr, "Failed to allocate device vector getfeaturemaps1 (error code %s)!\n", cudaGetErrorString(err));
         exit(EXIT_FAILURE);
     }
-    //std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
+//Timer_End(cudaMemcpy);
 
-    //std::chrono::duration<double> time_used = std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1);
-    //std::cout << "solve time cost " << time_used.count() << " seconds." << std::endl;
-
-    /*err = cudaHostRegister(image->imageData, sizeof(char) * image->imageSize, cudaHostRegisterMapped);
-    if(err != cudaSuccess){
-        fprintf(stderr, "Failed to allocate device vector getfeaturemaps2 (error code %s)!\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
-    err = cudaHostGetDevicePointer((void **)&imageData2, (void*)(image->imageData), 0);
-    if(err != cudaSuccess){
-        fprintf(stderr, "Failed to allocate device vector getfeaturemaps3 (error code %s)!\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }*/
+//#ifdef PERFORMANCE
+        //Timer_Begin(imageGrad);
+//#endif
 
     imageGrad(imageData1, dxData, dyData, cv::Size(image->widthStep, image->height));
+    //cudaDeviceSynchronize();
 
+//#ifdef PERFORMANCE
+        //Timer_End(imageGrad);
+//#endif
     maxGrad(dxData, dyData, r, alfa, cv::Size(width, height), numChannels);
-
-    err = cudaMemset(d_map, 0, sizeof (float) * (sizeX * sizeY  * p));
+    cudaMemset(d_map, 0, sizeof (float) * (sizeX * sizeY  * p));
     featureMaps(r, alfa, d_map, k, sizeX, sizeY, p, cv::Size(width, height));
-
-
     return LATENT_SVM_OK;
 }
 

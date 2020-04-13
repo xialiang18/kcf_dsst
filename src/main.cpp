@@ -268,19 +268,19 @@ void test_scale()
 int main()
 {
     std::stringstream photoName;
-    //std::string picture_path = "data/ball1/";
+    std::string picture_path = "data/ball1/";
     //std::string picture_path = "data/cat/";
     //std::string picture_path = "data/CarScale/img/";
     //std::string picture_path = "data/dog/";
-    std::string picture_path = "data/FaceOcc1/img/";
+    //std::string picture_path = "data/FaceOcc1/img/";
     std::string result_file = "res/result.txt";
-    int num = 100;
+    int num = 105;
     int initFlag = 1;
     //cv::Rect roi(556, 203, 222, 209);
-    //cv::Rect roi(496, 419, 40, 42);
+    cv::Rect roi(496, 419, 40, 42);
     //cv::Rect roi(6, 166, 42, 26);
     //cv::Rect roi(205, 218, 69, 40);
-    cv::Rect roi(118, 69, 114, 162);
+    //cv::Rect roi(118, 69, 114, 162);
 
     bool HOG = true;
     bool FIXEDWINDOW = false;
@@ -293,7 +293,7 @@ int main()
 
     for(int i = 1; i <= num; i++){
         photoName.clear();
-        photoName << picture_path << std::setfill('0') << std::setw(4) << i << ".jpg";
+        photoName << picture_path << std::setfill('0') << std::setw(8) << i << ".jpg";
         //photoName << picture_path << i << ".jpg";
         frame = cv::imread(photoName.str().c_str());
         if(frame.empty()){
@@ -301,17 +301,17 @@ int main()
             break;
         }
 
-#ifdef PERFORMANCE
+//#ifdef PERFORMANCE
         Timer_Begin(main);
-#endif
+//#endif
         if(initFlag)
             tracker->init( roi, frame );
         else{
             roi = tracker->update(frame);
         }
-#ifdef PERFORMANCE
+//#ifdef PERFORMANCE
         Timer_End(main);
-#endif
+//#endif
 
         cv::rectangle( frame, cv::Point( roi.x, roi.y ), cv::Point( roi.x + roi.width, roi.y + roi.height), cv::Scalar( 0, 255, 255 ), 1, 8 );
 

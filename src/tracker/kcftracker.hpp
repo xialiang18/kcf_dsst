@@ -83,7 +83,7 @@ the use of this software, even if advised of the possibility of such damage.
 #pragma once
 
 #include "tracker.h"
-#include "fhog.hpp"
+//#include "fhog.hpp"
 #include "fhogcuda.h"
 
 #ifndef _OPENCV_KCFTRACKER_HPP_
@@ -94,7 +94,7 @@ class KCFTracker : public Tracker
 {
   typedef enum SEARCH_METHOD{
     INIT_SEARCH = 1,
-    PART_SEARCH = 2,
+    PART_SEARCH = 1,
     ALL_SEARCH
   }SEARCH_METHOD;
 public:
@@ -211,4 +211,6 @@ private:
 
     std::map<int, kcfcuda::fhogFeature *> fhog;
 
+    std::map<int, unsigned char *> lab_input_data;
+    std::map<int, float *> lab_feature_data;
 };

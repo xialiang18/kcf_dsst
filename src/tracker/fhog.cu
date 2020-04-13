@@ -18,18 +18,25 @@ __constant__ float w[MAX_CELL_SIZE * 2];
 
 #define min(a, b) (a < b ? a : b)
 
-__global__ void d_imageGrad(char *imageData, float *dx, float *dy, cv::Size size)
+__global__ void d_imageGrad(unsigned char *imageData, float *dx, float *dy, cv::Size size)
 {
-    const unsigned int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
-    const unsigned int idy = (blockIdx.y * blockDim.y) + threadIdx.y;
-    if(idx > 0 && idx < size.width - 1 && idy > 0 && idy < size.height - 1){
-        const unsigned int thread_idx = (size.width * idy) + idx;
-        float x1 = imageData[thread_idx - 1];
-        float x2 = imageData[thread_idx + 1];
-        float y1 = imageData[(size.width * (idy - 1)) + idx];
-        float y2 = imageData[(size.width * (idy + 1)) + idx];
-        dx[thread_idx] = x2 - x1;
-        dy[thread_idx] = y2 - y1;
+    __shared__ unsigned char image[4][32];
+    const unsigned int idx = threadIdx.x;
+    const unsigned int idy = threadIdx.y;
+    const unsigned int x = (blockIdx.x * 30) + threadIdx.x;
+    const unsigned int y = (blockIdx.y * 2) + threadIdx.y;
+
+    int target_index = y * size.width + x;
+    image[idy][idx] = (unsigned char)imageData[target_index];
+    __syncthreads();
+
+    if(idx > 0 && idx < 31 && idy > 0 && idy < 3 && x < size.width - 1 && y < size.height - 1){
+        int x1 = image[idy][idx - 1];
+        int x2 = image[idy][idx + 1];
+        int y1 = image[idy - 1][idx];
+        int y2 = image[idy + 1][idx];
+        dx[target_index] = x2 - x1;
+        dy[target_index] = y2 - y1;
     }
 }
 
@@ -300,11 +307,13 @@ void fhogCudaInit(int cell_size)
     cudaMemcpyToSymbol(nearest, h_nearest, sizeof(int  ) *  k);
 }
 
-void imageGrad(char *imageData, float *dxData, float *dyData, cv::Size size)
+void imageGrad(unsigned char *imageData, float *dxData, float *dyData, cv::Size size)
 {
-    dim3 threads(THREAD_BUNDLE_NUM, 1);
-    int blockNum = (size.width + THREAD_BUNDLE_NUM - 1) / THREAD_BUNDLE_NUM;
-    dim3 blocks(blockNum, size.height);
+    //dim3 threads(THREAD_BUNDLE_NUM, 1);
+    dim3 threads(32, 4);
+    int blockNum_x = (size.width + 30 - 1) / 30;
+    int blockNum_y = (size.height + 4 - 1) / 4;
+    dim3 blocks(blockNum_x, blockNum_y);
 
     d_imageGrad<<<blocks, threads>>>(imageData, dxData, dyData, size);
 }

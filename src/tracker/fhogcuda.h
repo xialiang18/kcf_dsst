@@ -5,7 +5,14 @@
 #include "opencv2/imgproc/imgproc_c.h"
 
 #include "float.h"
-#include "fhog.hpp"
+
+typedef struct{
+    int sizeX;
+    int sizeY;
+    int numFeatures;
+    float *map;
+} CvLSVMFeatureMapCaskade;
+
 namespace kcfcuda {
 
 #define PI    CV_PI
@@ -70,8 +77,8 @@ private:
     /*
      * device memory
      */
-    char* imageData1;
-    char* imageData2;
+    unsigned char* imageData1;
+    //char* imageData2;
     float* dxData;
     float* dyData;
     float* r;

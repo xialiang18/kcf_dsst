@@ -33,7 +33,7 @@ FILE(GLOB_RECURSE sourcefiles "src/tracker/*.cpp" "src/*.cpp")
 #SET(CUDA_SRC src/tracker/fhog.cu)
 FILE(GLOB_RECURSE CUDA_SRC "src/tracker/*.cu")
 
-SET(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-gencode arch=compute_61,code=sm_61;-std=c++11;)
+SET(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS};-gencode arch=compute_53,code=sm_53;-std=c++11;)
 
 #ADD_EXECUTABLE(track ${SRC})
 CUDA_ADD_EXECUTABLE(track ${sourcefiles} ${CUDA_SRC})

@@ -84,10 +84,14 @@ the use of this software, even if advised of the possibility of such damage.
 #include "kcftracker.hpp"
 #include "ffttools.hpp"
 #include "recttools.hpp"
-#include "fhog.hpp"
+//#include "fhog.hpp"
 #include "labdata.hpp"
 #include "timer.hpp"
 #endif
+
+#include <cuda_runtime.h>
+
+extern void getLabFeatures(cv::Size z, int cell_size, unsigned char *input, float *out, cv::Size outsize);
 
 // Constructor
 KCFTracker::KCFTracker(bool hog, bool fixed_window, bool multiscale, bool lab)
@@ -168,6 +172,7 @@ KCFTracker::KCFTracker(bool hog, bool fixed_window, bool multiscale, bool lab)
         template_size = 1;
         scale_step = 1;
     }
+
 }
 
 // Initialize tracker
@@ -207,9 +212,9 @@ cv::Rect KCFTracker::update(cv::Mat image)
     
     //KCFTracker::SEARCH_METHOD method = is_trusted ? KCFTracker::PART_SEARCH : KCFTracker::ALL_SEARCH;
     KCFTracker::SEARCH_METHOD method = KCFTracker::PART_SEARCH;
-    Timer_Begin(feature3);
+//    Timer_Begin(feature3);
     cv::Mat feature = getFeatures(image, 0, method);
-    Timer_End(feature3);
+//    Timer_End(feature3);
     cv::Point2f res = detect(_tmpl, feature, method);
 
 #ifdef PERFORMANCE
@@ -226,7 +231,7 @@ cv::Rect KCFTracker::update(cv::Mat image)
     if (_roi.y + _roi.height <= 0) _roi.y = -_roi.height + 2;
 
 
-    // Update scale
+/*    // Update scale
 #ifdef PERFORMANCE
         Timer_Begin(detect_scale);
 #endif
@@ -236,11 +241,12 @@ cv::Rect KCFTracker::update(cv::Mat image)
 #ifdef PERFORMANCE
         Timer_End(detect_scale);
 #endif
-    currentScaleFactor = currentScaleFactor * scaleFactors[scale_pi.x];
+    currentScaleFactor = currentScaleFactor * scaleFactors[scale_pi.x];*/
     /*std::ofstream fout("scale_result.txt", std::ios::app);
     fout << currentScaleFactor << std::endl;*/
-    if(currentScaleFactor < min_scale_factor)
+/*    if(currentScaleFactor < min_scale_factor)
       currentScaleFactor = min_scale_factor;
+    std::cout << currentScaleFactor << std::endl;
     // else if(currentScaleFactor > max_scale_factor)
     //   currentScaleFactor = max_scale_factor;
 
@@ -258,7 +264,7 @@ cv::Rect KCFTracker::update(cv::Mat image)
     if (_roi.y >= image.rows - 1) _roi.y = image.rows - 1;
     if (_roi.x + _roi.width <= 0) _roi.x = -_roi.width + 2;
     if (_roi.y + _roi.height <= 0) _roi.y = -_roi.height + 2;
-
+*/
 #ifdef PERFORMANCE
         Timer_Begin(getFeatures);
 #endif
@@ -266,9 +272,9 @@ cv::Rect KCFTracker::update(cv::Mat image)
     assert(_roi.width >= 0 && _roi.height >= 0);
 
     if(is_trusted){
-        Timer_Begin(feature);
+        //Timer_Begin(feature);
         cv::Mat x = getFeatures(image, 0);
-        Timer_End(feature);
+        //Timer_End(feature);
 
     #ifdef PERFORMANCE
             Timer_End(getFeatures);
@@ -591,19 +597,19 @@ cv::Mat KCFTracker::getFeatures(const cv::Mat & image, bool inithann, KCFTracker
     extracted_roi.y = cy - extracted_roi.height / 2;
 
 //#ifdef PERFORMANCE
-        Timer_Begin(subwindow);
+        //Timer_Begin(subwindow);
 //#endif
     cv::Mat FeaturesMap;  
     cv::Mat z = RectTools::subwindow(image, extracted_roi, cv::BORDER_REPLICATE);
     
-    Timer_End(subwindow);
+    //Timer_End(subwindow);
 
-    Timer_Begin(resize);
+    //Timer_Begin(resize);
     if (z.cols != _tmpl_sz[method].width || z.rows != _tmpl_sz[method].height) {
         cv::resize(z, z, _tmpl_sz[method]);
     }   
 //#ifdef PERFORMANCE
-        Timer_End(resize);
+     //   Timer_End(resize);
 //#endif
 
     // HOG features
@@ -615,13 +621,13 @@ cv::Mat KCFTracker::getFeatures(const cv::Mat & image, bool inithann, KCFTracker
             fhog[method]->init(z_ipl.width, z_ipl.height, z_ipl.nChannels, cell_size);
         }
 //#ifdef PERFORMANCE
-        Timer_Begin(fhog);
+     //   Timer_Begin(fhog);
 //#endif
         fhog[method]->getFeatureMaps(&z_ipl, cell_size, &map);
         fhog[method]->normalizeAndTruncate(map,0.2f);
         fhog[method]->PCAFeatureMaps(map);
 //#ifdef PERFORMANCE
-        Timer_End(fhog);
+    //    Timer_End(fhog);
 //#endif
         if(size_patch.find(method) == size_patch.end()){
             size_patch[method].emplace_back(map->sizeY);
@@ -634,53 +640,87 @@ cv::Mat KCFTracker::getFeatures(const cv::Mat & image, bool inithann, KCFTracker
         fhog[method]->freeFeatureMapObject(&map);
 
 //#ifdef PERFORMANCE
-        Timer_Begin(lab);
+    //    Timer_Begin(lab);
 //#endif
         // Lab features
         if (_labfeatures) {
             cv::Mat imgLab;
+            //Timer_Begin(cvtColor);
             cvtColor(z, imgLab, CV_BGR2Lab);
+            //Timer_End(cvtColor);
             unsigned char *input = (unsigned char*)(imgLab.data);
 
-            // Sparse output vector
+            //Sparse output vector
+            // cv::Mat outputLab = cv::Mat(_labCentroids.rows, 
+            //                             size_patch[method][0] * size_patch[method][1], 
+            //                             CV_32F, 
+            //                             float(0));
+
+            // int cntCell = 0;
+            Timer_Begin(change);
+            // Iterate through each cell
+            if(lab_input_data.find(method) == lab_input_data.end())
+                cudaMallocManaged((void **)&(lab_input_data[method]), sizeof(unsigned char) * imgLab.rows * imgLab.cols * imgLab.channels());
+            cudaError_t err = cudaMemcpyAsync(lab_input_data[method], input, sizeof(unsigned char) * imgLab.rows * imgLab.cols * imgLab.channels(), cudaMemcpyHostToDevice);
+            if(err != cudaSuccess){
+                fprintf(stderr, "Failed to allocate device vector getfeaturemaps1 (error code %s)!\n", cudaGetErrorString(err));
+                exit(EXIT_FAILURE);
+            }
+            //float *lab_data;
+            if(lab_feature_data.find(method) == lab_feature_data.end())
+                cudaMallocManaged((void **)&(lab_feature_data[method]), sizeof(float) * _labCentroids.rows * size_patch[method][0] * size_patch[method][1]);
+            if (err != cudaSuccess)
+            {
+                fprintf(stderr, "Failed to allocate device vector partOfNorm (error code %s)!\n", cudaGetErrorString(err));
+                exit(EXIT_FAILURE);
+            }
+
+            getLabFeatures(cv::Size(z.cols, z.rows), cell_size, lab_input_data[method], lab_feature_data[method], cv::Size(size_patch[method][0] * size_patch[method][1], _labCentroids.rows));
+
             cv::Mat outputLab = cv::Mat(_labCentroids.rows, 
                                         size_patch[method][0] * size_patch[method][1], 
                                         CV_32F, 
-                                        float(0));
+                                        lab_feature_data[method]);
 
-            int cntCell = 0;
-            // Iterate through each cell
-            for (int cY = cell_size; cY < z.rows - cell_size; cY += cell_size){
-                for (int cX = cell_size; cX < z.cols - cell_size; cX += cell_size){
-                    // Iterate through each pixel of cell (cX,cY)
-                    for(int y = cY; y < cY + cell_size; ++y){
-                        for(int x = cX; x < cX + cell_size; ++x){
-                            // Lab components for each pixel
-                            float l = (float)input[(z.cols * y + x) * 3];
-                            float a = (float)input[(z.cols * y + x) * 3 + 1];
-                            float b = (float)input[(z.cols * y + x) * 3 + 2];
+            //cudaDeviceSynchronize();
 
-                            // Iterate trough each centroid
-                            float minDist = FLT_MAX;
-                            int minIdx = 0;
-                            float *inputCentroid = (float*)(_labCentroids.data);
-                            for(int k = 0; k < _labCentroids.rows; ++k){
-                                float dist = ( (l - inputCentroid[3*k]) * (l - inputCentroid[3*k]) )
-                                           + ( (a - inputCentroid[3*k + 1]) * (a - inputCentroid[3*k+1]) ) 
-                                           + ( (b - inputCentroid[3*k + 2]) * (b - inputCentroid[3*k+2]) );
-                                if(dist < minDist){
-                                    minDist = dist;
-                                    minIdx = k;
-                                }
-                            }
-                            // Store result at output
-                            outputLab.at<float>(minIdx, cntCell) += 1.0 / cell_sizeQ; 
-                            //((float*) outputLab.data)[minIdx * (size_patch[0]*size_patch[1]) + cntCell] += 1.0 / cell_sizeQ; 
-                        }
-                    }
-                    cntCell++;
-                }
-            }
+            // for (int cY = cell_size; cY < z.rows - cell_size; cY += cell_size){
+            //     for (int cX = cell_size; cX < z.cols - cell_size; cX += cell_size){
+            //         // Iterate through each pixel of cell (cX,cY)
+            //         for(int y = cY; y < cY + cell_size; ++y){
+            //             for(int x = cX; x < cX + cell_size; ++x){
+            //                 // Lab components for each pixel
+            //                 float l = (float)input[(z.rows * y + x) * 3];
+            //                 float a = (float)input[(z.rows * y + x) * 3 + 1];
+            //                 float b = (float)input[(z.rows * y + x) * 3 + 2];
+
+            //                 // Iterate trough each centroid
+            //                 float minDist = FLT_MAX;
+            //                 int minIdx = 0;
+            //                 float *inputCentroid = (float*)(_labCentroids.data);
+            //                 for(int k = 0; k < _labCentroids.rows; ++k){
+            //                     float dist = ( (l - inputCentroid[3*k]) * (l - inputCentroid[3*k]) )
+            //                             + ( (a - inputCentroid[3*k + 1]) * (a - inputCentroid[3*k+1]) ) 
+            //                             + ( (b - inputCentroid[3*k + 2]) * (b - inputCentroid[3*k+2]) );
+            //                     /*float dist = ( (l - data1[k][0]) * (l - data1[k][0]) )
+            //                             + ( (a - data1[k][1]) * (a - data1[k][1]) ) 
+            //                             + ( (b - data1[k][2]) * (b - data1[k][2]) );*/
+            //                     if(dist < minDist){
+            //                         minDist = dist;
+            //                         minIdx = k;
+            //                     }
+            //                 }
+            //                 // Store result at output
+            //                 outputLab.at<float>(minIdx, cntCell) += 1.0 / cell_sizeQ; 
+            //                 //((float*) outputLab.data)[minIdx * (size_patch[0]*size_patch[1]) + cntCell] += 1.0 / cell_sizeQ; 
+            //                 //out[minIdx * outsize.width + cntCell] += 1.0 / (cell_size * cell_size);
+            //             }
+            //         }
+            //         cntCell++;
+            //     }
+            // }
+
+            Timer_End(change);
             // Update size_patch[2] and add features to FeaturesMap
             /*if(update_flag){
                 size_patch[2] += _labCentroids.rows;
@@ -689,7 +729,7 @@ cv::Mat KCFTracker::getFeatures(const cv::Mat & image, bool inithann, KCFTracker
         }
 
 //#ifdef PERFORMANCE
-        Timer_End(lab);
+        //Timer_End(lab);
 //#endif
     }
     else {
