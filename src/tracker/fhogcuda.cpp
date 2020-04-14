@@ -170,7 +170,7 @@ Timer_End(cudaMemcpy);
 //#endif
 
     imageGrad(imageData1, dxData, dyData, cv::Size(image->widthStep, image->height));
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 
 //#ifdef PERFORMANCE
     //Timer_End(imageGrad);
@@ -178,17 +178,17 @@ Timer_End(cudaMemcpy);
 
     //Timer_Begin(maxGrad);
     maxGrad(dxData, dyData, r, alfa, cv::Size(width, height), numChannels);
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
     //Timer_End(maxGrad);
 
     //Timer_Begin(cudaMemset);
     cudaMemset(d_map, 0, sizeof (float) * (sizeX * sizeY  * p));
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
     //Timer_End(cudaMemset);
 
     //Timer_Begin(featureMaps);
     featureMaps(r, alfa, d_map, k, sizeX, sizeY, p, cv::Size(width, height));
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
     //Timer_End(featureMaps);
 
     return LATENT_SVM_OK;
@@ -221,7 +221,7 @@ int fhogFeature::normalizeAndTruncate(CvLSVMFeatureMapCaskade *map, const float 
 
 //Timer_Begin(squareSum);
     squareSum(d_map, d_partOfNorm, xp, p, sizeX * sizeY);
-    cudaDeviceSynchronize();
+    //cudaDeviceSynchronize();
 //Timer_End(squareSum);
 
     sizeX -= 2;
@@ -231,6 +231,7 @@ int fhogFeature::normalizeAndTruncate(CvLSVMFeatureMapCaskade *map, const float 
 
 //Timer_Begin(normalization);
     normalization(d_map, d_partOfNorm, d_newData, cv::Size(sizeX, sizeY), alfa);
+    //cudaDeviceSynchronize();
     
 //Timer_End(normalization);
 

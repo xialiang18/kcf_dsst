@@ -174,14 +174,14 @@ __global__ void d_normalization(float *map, float* partOfNorm, float * newData, 
     __shared__ float norm[4][32];
     int width = size.width;
     int height = size.height;
-    if(idx < size.width && idy < size.height){
+    if(idx < width && idy < height){
         norm[y][x] = partOfNorm[target_y * width + target_x];
     }
 
-    if(idx >= 1 && idx < size.width - 1 && idy >= 1 && idy < size.height - 1 && x >= 1 && x <= 30 && y >= 1 && y <= 2){
+    if(idx >= 1 && idx < width - 1 && idy >= 1 && idy < height - 1 && x >= 1 && x <= 30 && y >= 1 && y <= 2){
         int xp = 3 * NUM_SECTOR;
         int pp = 12 * NUM_SECTOR;
-        int sizeX = size.width - 2;
+        int sizeX = width - 2;
         int pos1 = (idy  ) * (sizeX + 2) * xp + (idx  ) * xp;
         int pos2 = (idy - 1) * (sizeX  ) * pp + (idx - 1) * pp;
         float valOfNorm1 = sqrt(
@@ -233,44 +233,42 @@ __global__ void d_normalization(float *map, float* partOfNorm, float * newData, 
 __global__ void d_PCAMaps(float *newData, float *featureData, cv::Size size, int xp, int yp)
 {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    float nx    = 1.0f / sqrtf((float)(xp * 2));
-    float ny    = 1.0f / sqrtf((float)(yp    ));
-    int val = 0;
+    const int idy = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if(idx < size.width * size.height){
-        int pos1 = idx * NUM_SECTOR * 12;
-        int pos2 = idx * (NUM_SECTOR * 3 + 4);
-        int k = 0;
+    const int x = threadIdx.x;
+    const int target_x = idx / 32;
+    const int target_y = idy;
+    const int target_z = x - x / 32 * 32;
+    const int width = size.width;
+    const int height = size.height;
+
+    if(target_x < width && target_y < height && target_z < 31){
+        float nx    = 1.0f / sqrtf((float)(xp * 2));
+        float ny    = 1.0f / sqrtf((float)(yp    ));
+        int val = 0;
+
+        int pos1 = (target_y * width + target_x) * NUM_SECTOR * 12;
+        int pos2 = (target_y * width + target_x) * (NUM_SECTOR * 3 + 4);
         int ii, jj;
-        for(jj = 0; jj < xp * 2; jj++)
-        {
-            val = 0;
+
+        if(target_z < xp * 2){
             for(ii = 0; ii < yp; ii++)
             {
-                val += newData[pos1 + yp * xp + ii * xp * 2 + jj];
+                val += newData[pos1 + yp * xp + ii * xp * 2 + target_z];
             }
-            featureData[pos2 + k] = val * ny;
-            k++;
-        }
-        for(jj = 0; jj < xp; jj++)
-        {
-            val = 0;
+            featureData[pos2 + target_z] = val * ny;
+        }else if(target_z < xp * 3){
             for(ii = 0; ii < yp; ii++)
             {
-                val += newData[pos1 + ii * xp + jj];
+                val += newData[pos1 + ii * xp + target_z - 2 * xp];
             }
-            featureData[pos2 + k] = val * ny;
-            k++;
-        }
-        for(ii = 0; ii < yp; ii++)
-        {
-            val = 0;
+            featureData[pos2 + target_z] = val * ny;
+        }else{
             for(jj = 0; jj < 2 * xp; jj++)
             {
-                val += newData[pos1 + yp * xp + ii * xp * 2 + jj];
+                val += newData[pos1 + yp * xp + (target_z - 3 * xp) * xp * 2 + jj];
             }
-            featureData[pos2 + k] = val * nx;
-            k++;
+            featureData[pos2 + target_z] = val * nx;
         }
     }
 }
@@ -391,23 +389,11 @@ void normalization(float *map, float* partOfNorm, float * newData, cv::Size size
     int height = size.height + 2;
     int thread_x, thread_y, block_x, block_y;
 
-    if(width > 128){
-        thread_x = 128;
-        thread_y = 3;
-        block_x = (width + 125) / 126;
-        block_y = height;
-    }else{
-        thread_y = 128 / width;
-        thread_x = 128 / thread_y;
-        block_x = 1;
-        block_y = (height + thread_y - 1) / thread_y;
-    }
-
     thread_x = 32;
     thread_y = 4;
     block_x = (width + 30 - 1) / 30;
     block_y = (height + 2 - 1) / 2;
-    dim3 threads(32, 4, 1);
+    dim3 threads(thread_x, thread_y, 1);
     dim3 blocks(block_x, block_y, NUM_SECTOR);
 
     d_normalization<<<blocks, threads>>>(map, partOfNorm, newData, size, alfa);
@@ -417,8 +403,12 @@ void PCAMaps(float *newData, float *featureData, cv::Size size, int xp, int yp)
 {
     //dim3 threads(32, 1);
     //dim3 blocks((size.width + 31) / 32, size.height);
-    int threads = THREAD_BUNDLE_NUM;
-    int blocks = (size.height * size.width + THREAD_BUNDLE_NUM - 1) / THREAD_BUNDLE_NUM;
+    dim3 threads(THREAD_BUNDLE_NUM, 1);
+    int width = size.width;
+    int height = size.height;
+    int block_x = (width + 4 - 1) / 4;
+    int block_y = height;
+    dim3 blocks(block_x, block_y);
 
     d_PCAMaps<<<blocks, threads>>>(newData, featureData, size, xp, yp);
 }
