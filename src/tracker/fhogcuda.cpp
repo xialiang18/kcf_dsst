@@ -282,9 +282,49 @@ int fhogFeature::PCAFeatureMaps(CvLSVMFeatureMapCaskade *map)
     //newData = (float *)malloc (sizeof(float) * (sizeX * sizeY * pp));
     //Timer_Begin(PCAFeatureMaps);
 
-    PCAMaps(d_newData, featureData, cv::Size(sizeX, sizeY), xp, yp);
+    //PCAMaps(d_newData, featureData, cv::Size(sizeX, sizeY), xp, yp);
 
     cudaDeviceSynchronize();
+
+    for(i = 0; i < sizeY; i++)
+    {
+        for(j = 0; j < sizeX; j++)
+        {
+            pos1 = ((i)*sizeX + j)*p;
+            pos2 = ((i)*sizeX + j)*pp;
+            k = 0;
+            for(jj = 0; jj < xp * 2; jj++)
+            {
+                val = 0;
+                for(ii = 0; ii < yp; ii++)
+                {
+                    val += map->map[pos1 + yp * xp + ii * xp * 2 + jj];
+                }/*for(ii = 0; ii < yp; ii++)*/
+                featureData[pos2 + k] = val * ny;
+                k++;
+            }/*for(jj = 0; jj < xp * 2; jj++)*/
+            for(jj = 0; jj < xp; jj++)
+            {
+                val = 0;
+                for(ii = 0; ii < yp; ii++)
+                {
+                    val += map->map[pos1 + ii * xp + jj];
+                }/*for(ii = 0; ii < yp; ii++)*/
+                featureData[pos2 + k] = val * ny;
+                k++;
+            }/*for(jj = 0; jj < xp; jj++)*/
+            for(ii = 0; ii < yp; ii++)
+            {
+                val = 0;
+                for(jj = 0; jj < 2 * xp; jj++)
+                {
+                    val += map->map[pos1 + yp * xp + ii * xp * 2 + jj];
+                }/*for(jj = 0; jj < xp; jj++)*/
+                featureData[pos2 + k] = val * nx;
+                k++;
+            } /*for(ii = 0; ii < yp; ii++)*/           
+        }/*for(j = 0; j < sizeX; j++)*/
+    }/*for(i = 0; i < sizeY; i++)*/
 
     //cudaMemcpy(newData, featureData, sizeof(float) * (sizeX * sizeY * pp), cudaMemcpyDeviceToHost);
 
