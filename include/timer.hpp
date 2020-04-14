@@ -7,7 +7,7 @@
 // #define Timer(name) TimeLogger timer(name)
 
 #define Timer_Begin(name) TimeLogger *timer##name = new TimeLogger(#name)
-#define Timer_End(name) delete timer##name
+#define Timer_End(name) timer##name->~TimeLogger();
 
 #include <map>
 #include <vector>

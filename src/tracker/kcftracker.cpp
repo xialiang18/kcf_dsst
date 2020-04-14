@@ -621,13 +621,19 @@ cv::Mat KCFTracker::getFeatures(const cv::Mat & image, bool inithann, KCFTracker
             fhog[method]->init(z_ipl.width, z_ipl.height, z_ipl.nChannels, cell_size);
         }
 //#ifdef PERFORMANCE
-     //   Timer_Begin(fhog);
+        Timer_Begin(fhog);
 //#endif
+Timer_Begin(getFeatureMaps);
         fhog[method]->getFeatureMaps(&z_ipl, cell_size, &map);
+Timer_End(getFeatureMaps);
+Timer_Begin(normalizeAndTruncate);
         fhog[method]->normalizeAndTruncate(map,0.2f);
+Timer_End(normalizeAndTruncate);
+Timer_Begin(PCAFeatureMaps);
         fhog[method]->PCAFeatureMaps(map);
+Timer_End(PCAFeatureMaps);
 //#ifdef PERFORMANCE
-    //    Timer_End(fhog);
+        Timer_End(fhog);
 //#endif
         if(size_patch.find(method) == size_patch.end()){
             size_patch[method].emplace_back(map->sizeY);
@@ -650,14 +656,7 @@ cv::Mat KCFTracker::getFeatures(const cv::Mat & image, bool inithann, KCFTracker
             //Timer_End(cvtColor);
             unsigned char *input = (unsigned char*)(imgLab.data);
 
-            //Sparse output vector
-            // cv::Mat outputLab = cv::Mat(_labCentroids.rows, 
-            //                             size_patch[method][0] * size_patch[method][1], 
-            //                             CV_32F, 
-            //                             float(0));
-
-            // int cntCell = 0;
-            Timer_Begin(change);
+            //Timer_Begin(change);
             // Iterate through each cell
             if(lab_input_data.find(method) == lab_input_data.end())
                 cudaMallocManaged((void **)&(lab_input_data[method]), sizeof(unsigned char) * imgLab.rows * imgLab.cols * imgLab.channels());
@@ -682,49 +681,7 @@ cv::Mat KCFTracker::getFeatures(const cv::Mat & image, bool inithann, KCFTracker
                                         CV_32F, 
                                         lab_feature_data[method]);
 
-            //cudaDeviceSynchronize();
-
-            // for (int cY = cell_size; cY < z.rows - cell_size; cY += cell_size){
-            //     for (int cX = cell_size; cX < z.cols - cell_size; cX += cell_size){
-            //         // Iterate through each pixel of cell (cX,cY)
-            //         for(int y = cY; y < cY + cell_size; ++y){
-            //             for(int x = cX; x < cX + cell_size; ++x){
-            //                 // Lab components for each pixel
-            //                 float l = (float)input[(z.rows * y + x) * 3];
-            //                 float a = (float)input[(z.rows * y + x) * 3 + 1];
-            //                 float b = (float)input[(z.rows * y + x) * 3 + 2];
-
-            //                 // Iterate trough each centroid
-            //                 float minDist = FLT_MAX;
-            //                 int minIdx = 0;
-            //                 float *inputCentroid = (float*)(_labCentroids.data);
-            //                 for(int k = 0; k < _labCentroids.rows; ++k){
-            //                     float dist = ( (l - inputCentroid[3*k]) * (l - inputCentroid[3*k]) )
-            //                             + ( (a - inputCentroid[3*k + 1]) * (a - inputCentroid[3*k+1]) ) 
-            //                             + ( (b - inputCentroid[3*k + 2]) * (b - inputCentroid[3*k+2]) );
-            //                     /*float dist = ( (l - data1[k][0]) * (l - data1[k][0]) )
-            //                             + ( (a - data1[k][1]) * (a - data1[k][1]) ) 
-            //                             + ( (b - data1[k][2]) * (b - data1[k][2]) );*/
-            //                     if(dist < minDist){
-            //                         minDist = dist;
-            //                         minIdx = k;
-            //                     }
-            //                 }
-            //                 // Store result at output
-            //                 outputLab.at<float>(minIdx, cntCell) += 1.0 / cell_sizeQ; 
-            //                 //((float*) outputLab.data)[minIdx * (size_patch[0]*size_patch[1]) + cntCell] += 1.0 / cell_sizeQ; 
-            //                 //out[minIdx * outsize.width + cntCell] += 1.0 / (cell_size * cell_size);
-            //             }
-            //         }
-            //         cntCell++;
-            //     }
-            // }
-
-            Timer_End(change);
-            // Update size_patch[2] and add features to FeaturesMap
-            /*if(update_flag){
-                size_patch[2] += _labCentroids.rows;
-            }*/
+            //Timer_End(change);
             FeaturesMap.push_back(outputLab);
         }
 

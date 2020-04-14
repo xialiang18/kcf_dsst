@@ -52,7 +52,7 @@ int fhogFeature::init(int imgWidth, int imgHeight, int channels, int k)
         Timer_Begin(cudaMalloc);
 #endif
 
-    err = cudaMalloc((void **)&imageData1, sizeof(char) * imageSize);
+    err = cudaMallocManaged((void **)&imageData1, sizeof(char) * imageSize);
     if (err != cudaSuccess)
     {
         fprintf(stderr, "Failed to allocate device vector imageData (error code %s)!\n", cudaGetErrorString(err));
@@ -156,27 +156,41 @@ int fhogFeature::getFeatureMaps(const IplImage *image, const int k, CvLSVMFeatur
     numChannels = image->nChannels;
     cudaError_t err = cudaSuccess;
 
-//Timer_Begin(cudaMemcpy);
-    err = cudaMemcpyAsync(imageData1, image->imageData, sizeof(char) * image->imageSize, cudaMemcpyHostToDevice);
+Timer_Begin(cudaMemcpy);
+    std::cout << "size " << image->imageSize << std::endl;
+    err = cudaMemcpy(imageData1, image->imageData, sizeof(char) * image->imageSize, cudaMemcpyHostToDevice);
     if(err != cudaSuccess){
         fprintf(stderr, "Failed to allocate device vector getfeaturemaps1 (error code %s)!\n", cudaGetErrorString(err));
         exit(EXIT_FAILURE);
     }
-//Timer_End(cudaMemcpy);
+Timer_End(cudaMemcpy);
 
 //#ifdef PERFORMANCE
-        //Timer_Begin(imageGrad);
+    //Timer_Begin(imageGrad);
 //#endif
 
     imageGrad(imageData1, dxData, dyData, cv::Size(image->widthStep, image->height));
-    //cudaDeviceSynchronize();
+    cudaDeviceSynchronize();
 
 //#ifdef PERFORMANCE
-        //Timer_End(imageGrad);
+    //Timer_End(imageGrad);
 //#endif
+
+    //Timer_Begin(maxGrad);
     maxGrad(dxData, dyData, r, alfa, cv::Size(width, height), numChannels);
+    cudaDeviceSynchronize();
+    //Timer_End(maxGrad);
+
+    //Timer_Begin(cudaMemset);
     cudaMemset(d_map, 0, sizeof (float) * (sizeX * sizeY  * p));
+    cudaDeviceSynchronize();
+    //Timer_End(cudaMemset);
+
+    //Timer_Begin(featureMaps);
     featureMaps(r, alfa, d_map, k, sizeX, sizeY, p, cv::Size(width, height));
+    cudaDeviceSynchronize();
+    //Timer_End(featureMaps);
+
     return LATENT_SVM_OK;
 }
 
@@ -205,15 +219,20 @@ int fhogFeature::normalizeAndTruncate(CvLSVMFeatureMapCaskade *map, const float 
     xp = NUM_SECTOR * 3;
     pp = NUM_SECTOR * 12;
 
+//Timer_Begin(squareSum);
     squareSum(d_map, d_partOfNorm, xp, p, sizeX * sizeY);
+    cudaDeviceSynchronize();
+//Timer_End(squareSum);
 
     sizeX -= 2;
     sizeY -= 2;
 
     //newData = (float *)malloc (sizeof(float) * (sizeX * sizeY * pp));
 
+//Timer_Begin(normalization);
     normalization(d_map, d_partOfNorm, d_newData, cv::Size(sizeX, sizeY), alfa);
-    cudaDeviceSynchronize();
+    
+//Timer_End(normalization);
 
     //cudaMemcpy(newData, d_newData, sizeof(float) * (sizeX * sizeY * pp), cudaMemcpyDeviceToHost);
 
@@ -221,7 +240,7 @@ int fhogFeature::normalizeAndTruncate(CvLSVMFeatureMapCaskade *map, const float 
     map->sizeX = sizeX;
     map->sizeY = sizeY;
 
-    free (map->map);
+    //free (map->map);
 
     map->map = d_newData;
 
@@ -259,56 +278,22 @@ int fhogFeature::PCAFeatureMaps(CvLSVMFeatureMapCaskade *map)
     nx    = 1.0f / sqrtf((float)(xp * 2));
     ny    = 1.0f / sqrtf((float)(yp    ));
 
-    newData = (float *)malloc (sizeof(float) * (sizeX * sizeY * pp));
+    //newData = (float *)malloc (sizeof(float) * (sizeX * sizeY * pp));
+    //Timer_Begin(PCAFeatureMaps);
 
-    //PCAMaps(d_newData, featureData, cv::Size(sizeX, sizeY), xp, yp);
+    PCAMaps(d_newData, featureData, cv::Size(sizeX, sizeY), xp, yp);
+
+    cudaDeviceSynchronize();
 
     //cudaMemcpy(newData, featureData, sizeof(float) * (sizeX * sizeY * pp), cudaMemcpyDeviceToHost);
-    for(i = 0; i < sizeY; i++)
-    {
-        for(j = 0; j < sizeX; j++)
-        {
-            pos1 = ((i)*sizeX + j)*p;
-            pos2 = ((i)*sizeX + j)*pp;
-            k = 0;
-            for(jj = 0; jj < xp * 2; jj++)
-            {
-                val = 0;
-                for(ii = 0; ii < yp; ii++)
-                {
-                    val += map->map[pos1 + yp * xp + ii * xp * 2 + jj];
-                }
-                newData[pos2 + k] = val * ny;
-                k++;
-            }
-            for(jj = 0; jj < xp; jj++)
-            {
-                val = 0;
-                for(ii = 0; ii < yp; ii++)
-                {
-                    val += map->map[pos1 + ii * xp + jj];
-                }
-                newData[pos2 + k] = val * ny;
-                k++;
-            }
-            for(ii = 0; ii < yp; ii++)
-            {
-                val = 0;
-                for(jj = 0; jj < 2 * xp; jj++)
-                {
-                    val += map->map[pos1 + yp * xp + ii * xp * 2 + jj];
-                }
-                newData[pos2 + k] = val * nx;
-                k++;
-            }
-        }
-    }
+
+    //Timer_End(PCAFeatureMaps);
 //swop data
     map->numFeatures = pp;
 
     //free (map->map);
 
-    map->map = newData;
+    map->map = featureData;
 
     return LATENT_SVM_OK;
 }
@@ -324,19 +309,19 @@ int fhogFeature::allocFeatureMapObject(CvLSVMFeatureMapCaskade **obj, const int 
     (*obj)->sizeX       = sizeX;
     (*obj)->sizeY       = sizeY;
     (*obj)->numFeatures = numFeatures;
-    (*obj)->map = (float *) malloc(sizeof (float) *
-                                  (sizeX * sizeY  * numFeatures));
-    for(i = 0; i < sizeX * sizeY * numFeatures; i++)
-    {
-        (*obj)->map[i] = 0.0f;
-    }
+    // (*obj)->map = (float *) malloc(sizeof (float) *
+    //                               (sizeX * sizeY  * numFeatures));
+    // for(i = 0; i < sizeX * sizeY * numFeatures; i++)
+    // {
+    //     (*obj)->map[i] = 0.0f;
+    // }
     return LATENT_SVM_OK;
 }
 
 int fhogFeature::freeFeatureMapObject (CvLSVMFeatureMapCaskade **obj)
 {
     if(*obj == NULL) return LATENT_SVM_MEM_NULL;
-    free((*obj)->map);
+    //free((*obj)->map);
     free(*obj);
     (*obj) = NULL;
     return LATENT_SVM_OK;

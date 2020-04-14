@@ -45,26 +45,28 @@ __global__ void d_maxGrad(float *dx, float *dy, float *r, int *alfa, cv::Size si
     const unsigned int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
     const unsigned int idy = (blockIdx.y * blockDim.y) + threadIdx.y;
     if(idx > 0 && idx < size.width - 1 && idy > 0 && idy < size.height - 1){
-        int c = 0;
+        //int c = 0;
         int pos = idy * size.width * channels + idx * channels;
-        float x = (dx[pos + c]);
-        float y = (dy[pos + c]);
+        float x, y;
         float tx, ty;
         float magnitude;
-        r[idy * size.width + idx] = sqrtf(x * x + y * y);
-        for(int ch = 1; ch < channels; ch++)
+        float max_r = 0;
+        //r[idy * size.width + idx] = sqrtf(x * x + y * y);
+        for(int ch = 0; ch < channels; ch++)
         {
             tx = (dx[pos + ch]);
             ty = (dy[pos + ch]);
             magnitude = sqrtf(tx * tx + ty * ty);
-            if(magnitude > r[idy * size.width + idx])
+            if(magnitude > max_r)
             {
-                r[idy * size.width + idx] = magnitude;
-                c = ch;
+                max_r = magnitude;
+                //c = ch;
                 x = tx;
                 y = ty;
             }
         }
+
+        r[idy * size.width + idx] = max_r;
 
         float max  = boundary_x[0] * x + boundary_y[0] * y;
         float maxi = 0;
@@ -93,50 +95,53 @@ __global__ void d_maxGrad(float *dx, float *dy, float *r, int *alfa, cv::Size si
 
 __global__ void d_featureMaps(float *r, int *alfa, float *map, int k, int sizeX, int sizeY, int p, cv::Size size)
 {
-    const int i = blockIdx.y * blockDim.y + threadIdx.y;
-    const int j = blockIdx.x * blockDim.x + threadIdx.x;
-    const int t = blockIdx.z * blockDim.z + threadIdx.z;
-    if(j < sizeX && i < sizeY && t < k * k){
-        int ii = t / k;
-        int jj = t - ii * k;
-        int width = size.width;
-        int height = size.height;
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int idy = blockIdx.y * blockDim.y + threadIdx.y;
+    int i = idy / k;
+    int j = idx / k;
+    int ii = idy - i * k;
+    int jj = idx - j * k;
+    int width = size.width;
+    int height = size.height;
+
+    if(j < width && i < height){
+        // int ii = t / k;
+        // int jj = t - ii * k;
+        // int width = size.width;
+        // int height = size.height;
         int stringSize = sizeX * p;
-        if ((i * k + ii > 0) &&
-            (i * k + ii < height - 1) &&
-            (j * k + jj > 0) &&
-            (j * k + jj < width  - 1))
+
+        if ((i * k + ii > 0) && (i * k + ii < height - 1) && (j * k + jj > 0) && (j * k + jj < width  - 1))
         {
           int d = (k * i + ii) * width + (j * k + jj);
-          map[ i * stringSize + j * p + alfa[d * 2    ]] +=
-              r[d] * w[ii * 2] * w[jj * 2];
-          map[ i * stringSize + j * p + alfa[d * 2 + 1] + NUM_SECTOR] +=
-              r[d] * w[ii * 2] * w[jj * 2];
+          int alfa_2d = alfa[d * 2];
+          int alfa_2d_1 = alfa[d * 2 + 1];
+          float rr = r[d];
+          float increment = rr * w[ii * 2] * w[jj * 2];
+          atomicAdd(&map[ i * stringSize + j * p + alfa_2d], increment);
+          atomicAdd(&map[ i * stringSize + j * p + alfa_2d_1 + NUM_SECTOR], increment);
           if ((i + nearest[ii] >= 0) &&
               (i + nearest[ii] <= sizeY - 1))
           {
-            map[(i + nearest[ii]) * stringSize + j * p + alfa[d * 2    ]             ] +=
-              r[d] * w[ii * 2 + 1] * w[jj * 2 ];
-            map[(i + nearest[ii]) * stringSize + j * p + alfa[d * 2 + 1] + NUM_SECTOR] +=
-              r[d] * w[ii * 2 + 1] * w[jj * 2 ];
+            increment = rr * w[ii * 2 + 1] * w[jj * 2];
+            atomicAdd(&map[(i + nearest[ii]) * stringSize + j * p + alfa_2d], increment);
+            atomicAdd(&map[(i + nearest[ii]) * stringSize + j * p + alfa_2d_1 + NUM_SECTOR], increment);
           }
           if ((j + nearest[jj] >= 0) &&
               (j + nearest[jj] <= sizeX - 1))
           {
-            map[i * stringSize + (j + nearest[jj]) * p + alfa[d * 2    ]             ] +=
-              r[d] * w[ii * 2] * w[jj * 2 + 1];
-            map[i * stringSize + (j + nearest[jj]) * p + alfa[d * 2 + 1] + NUM_SECTOR] +=
-              r[d] * w[ii * 2] * w[jj * 2 + 1];
+            increment = rr * w[ii * 2] * w[jj * 2 + 1];
+            atomicAdd(&map[i * stringSize + (j + nearest[jj]) * p + alfa_2d], increment);
+            atomicAdd(&map[i * stringSize + (j + nearest[jj]) * p + alfa_2d_1 + NUM_SECTOR], increment);
           }
           if ((i + nearest[ii] >= 0) &&
               (i + nearest[ii] <= sizeY - 1) &&
               (j + nearest[jj] >= 0) &&
               (j + nearest[jj] <= sizeX - 1))
           {
-            map[(i + nearest[ii]) * stringSize + (j + nearest[jj]) * p + alfa[d * 2    ]             ] +=
-              r[d] * w[ii * 2 + 1] * w[jj * 2 + 1];
-            map[(i + nearest[ii]) * stringSize + (j + nearest[jj]) * p + alfa[d * 2 + 1] + NUM_SECTOR] +=
-              r[d] * w[ii * 2 + 1] * w[jj * 2 + 1];
+            increment = rr * w[ii * 2 + 1] * w[jj * 2 + 1];
+            atomicAdd(&map[(i + nearest[ii]) * stringSize + (j + nearest[jj]) * p + alfa_2d], increment);
+            atomicAdd(&map[(i + nearest[ii]) * stringSize + (j + nearest[jj]) * p + alfa_2d_1 + NUM_SECTOR], increment);
           }
         }
     }
@@ -161,52 +166,67 @@ __global__ void d_normalization(float *map, float* partOfNorm, float * newData, 
     const unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned int idy = blockIdx.y * blockDim.y + threadIdx.y;
     const unsigned int idz = blockIdx.z * blockDim.z + threadIdx.z;
+    int x = threadIdx.x;
+    int y = threadIdx.y;
+    int target_x = blockIdx.x * (blockDim.x - 2) + threadIdx.x;
+    int target_y = blockIdx.y * (blockDim.y - 2) + threadIdx.y;
 
-    if(idx >= 1 && idx <= size.width && idy >= 1 && idy <= size.height && idz < NUM_SECTOR){
+    __shared__ float norm[4][32];
+    int width = size.width;
+    int height = size.height;
+    if(idx < size.width && idy < size.height){
+        norm[y][x] = partOfNorm[target_y * width + target_x];
+    }
+
+    if(idx >= 1 && idx < size.width - 1 && idy >= 1 && idy < size.height - 1 && x >= 1 && x <= 30 && y >= 1 && y <= 2){
         int xp = 3 * NUM_SECTOR;
         int pp = 12 * NUM_SECTOR;
-        int sizeX = size.width;
+        int sizeX = size.width - 2;
         int pos1 = (idy  ) * (sizeX + 2) * xp + (idx  ) * xp;
         int pos2 = (idy - 1) * (sizeX  ) * pp + (idx - 1) * pp;
         float valOfNorm1 = sqrt(
-            partOfNorm[(idy    )*(sizeX + 2) + (idx    )] +
-            partOfNorm[(idy    )*(sizeX + 2) + (idx + 1)] +
-            partOfNorm[(idy + 1)*(sizeX + 2) + (idx    )] +
-            partOfNorm[(idy + 1)*(sizeX + 2) + (idx + 1)]) + FLT_EPSILON;
+            norm[y][x] +
+            norm[y][x + 1] +
+            norm[y + 1][x] +
+            norm[y + 1][x + 1]) + FLT_EPSILON;
 
         float valOfNorm2 = sqrt(
-            partOfNorm[(idy    )*(sizeX + 2) + (idx    )] +
-            partOfNorm[(idy    )*(sizeX + 2) + (idx + 1)] +
-            partOfNorm[(idy - 1)*(sizeX + 2) + (idx    )] +
-            partOfNorm[(idy - 1)*(sizeX + 2) + (idx + 1)]) + FLT_EPSILON;
+            norm[y][x] +
+            norm[y][x + 1] +
+            norm[y - 1][x] +
+            norm[y - 1][x + 1]) + FLT_EPSILON;
 
         float valOfNorm3 = sqrt(
-            partOfNorm[(idy    )*(sizeX + 2) + (idx    )] +
-            partOfNorm[(idy    )*(sizeX + 2) + (idx - 1)] +
-            partOfNorm[(idy + 1)*(sizeX + 2) + (idx    )] +
-            partOfNorm[(idy + 1)*(sizeX + 2) + (idx - 1)]) + FLT_EPSILON;
+            norm[y][x] +
+            norm[y][x - 1] +
+            norm[y + 1][x] +
+            norm[y + 1][x - 1]) + FLT_EPSILON;
 
         float valOfNorm4 = sqrt(
-            partOfNorm[(idy    )*(sizeX + 2) + (idx    )] +
-            partOfNorm[(idy    )*(sizeX + 2) + (idx - 1)] +
-            partOfNorm[(idy - 1)*(sizeX + 2) + (idx    )] +
-            partOfNorm[(idy - 1)*(sizeX + 2) + (idx - 1)]) + FLT_EPSILON;
+            norm[y][x] +
+            norm[y][x - 1] +
+            norm[y - 1][x] +
+            norm[y - 1][x - 1]) + FLT_EPSILON;
 
-        newData[pos2 + idz] = min(map[pos1 + idz] / valOfNorm1, alfa);
-        newData[pos2 + 2 * idz + NUM_SECTOR * 4] = min(map[pos1 + 2 * idz + NUM_SECTOR] / valOfNorm1, alfa);
-        newData[pos2 + 2 * idz + NUM_SECTOR * 4 + 1] = min(map[pos1 + 2 * idz + NUM_SECTOR + 1] / valOfNorm1, alfa);
+        float map_idz = map[pos1 + idz];
+        float map_idz_2 = map[pos1 + 2 * idz + NUM_SECTOR];
+        float map_idz_2_1 = map[pos1 + 2 * idz + NUM_SECTOR + 1];
 
-        newData[pos2 + idz + NUM_SECTOR] = min(map[pos1 + idz] / valOfNorm2, alfa);
-        newData[pos2 + 2 * idz + NUM_SECTOR * 6] = min(map[pos1 + 2 * idz + NUM_SECTOR] / valOfNorm2, alfa);
-        newData[pos2 + 2 * idz + NUM_SECTOR * 6 + 1] = min(map[pos1 + 2 * idz + NUM_SECTOR + 1] / valOfNorm2, alfa);
+        newData[pos2 + idz] = min(map_idz / valOfNorm1, alfa);
+        newData[pos2 + 2 * idz + NUM_SECTOR * 4] = min(map_idz_2 / valOfNorm1, alfa);
+        newData[pos2 + 2 * idz + NUM_SECTOR * 4 + 1] = min(map_idz_2_1 / valOfNorm1, alfa);
 
-        newData[pos2 + idz + NUM_SECTOR * 2] = min(map[pos1 + idz] / valOfNorm3, alfa);
-        newData[pos2 + 2 * idz + NUM_SECTOR * 8] = min(map[pos1 + 2 * idz + NUM_SECTOR] / valOfNorm3, alfa);
-        newData[pos2 + 2 * idz + NUM_SECTOR * 8 + 1] = min(map[pos1 + 2 * idz + NUM_SECTOR + 1] / valOfNorm3, alfa);
+        newData[pos2 + idz + NUM_SECTOR] = min(map_idz / valOfNorm2, alfa);
+        newData[pos2 + 2 * idz + NUM_SECTOR * 6] = min(map_idz_2 / valOfNorm2, alfa);
+        newData[pos2 + 2 * idz + NUM_SECTOR * 6 + 1] = min(map_idz_2_1 / valOfNorm2, alfa);
 
-        newData[pos2 + idz + NUM_SECTOR * 3] = min(map[pos1 + idz] / valOfNorm4, alfa);
-        newData[pos2 + 2 * idz + NUM_SECTOR * 10] = min(map[pos1 + 2 * idz + NUM_SECTOR] / valOfNorm4, alfa);
-        newData[pos2 + 2 * idz + NUM_SECTOR * 10 + 1] = min(map[pos1 + 2 * idz + NUM_SECTOR + 1] / valOfNorm4, alfa);
+        newData[pos2 + idz + NUM_SECTOR * 2] = min(map_idz / valOfNorm3, alfa);
+        newData[pos2 + 2 * idz + NUM_SECTOR * 8] = min(map_idz_2 / valOfNorm3, alfa);
+        newData[pos2 + 2 * idz + NUM_SECTOR * 8 + 1] = min(map_idz_2_1 / valOfNorm3, alfa);
+
+        newData[pos2 + idz + NUM_SECTOR * 3] = min(map_idz / valOfNorm4, alfa);
+        newData[pos2 + 2 * idz + NUM_SECTOR * 10] = min(map_idz_2 / valOfNorm4, alfa);
+        newData[pos2 + 2 * idz + NUM_SECTOR * 10 + 1] = min(map_idz_2_1 / valOfNorm4, alfa);
     }
 }
 
@@ -330,8 +350,27 @@ void maxGrad(float *dx, float *dy, float *r, int *alfa, cv::Size size, int chann
 
 void featureMaps(float *r, int *alfa, float *map, int k, int sizeX, int sizeY, int p, cv::Size size)
 {
-    dim3 threads(32, 1, 1);
-    dim3 blocks((sizeX + 31) / 32, sizeY, k * k);
+    // dim3 threads(32, 1, 1);
+    // dim3 blocks((sizeX + 31) / 32, sizeY, k * k);
+    int width = size.width;
+    int height = size.height;
+
+    int thread_x, thread_y, block_x, block_y;
+    if(width > 128){
+        thread_x = 128;
+        thread_y = 1;
+        block_x = (width + 127) / 128;
+        block_y = height;
+    }else{
+        //thread_x = width;
+        thread_y = 128 / width;
+        thread_x = 128 / thread_y;
+        block_x = 1;
+        block_y = (height + thread_y - 1) / thread_y;
+    }
+
+    dim3 threads(thread_x, thread_y);
+    dim3 blocks(block_x, block_y);
 
     d_featureMaps<<<blocks, threads>>>(r, alfa, map, k, sizeX, sizeY, p, size);
 }
@@ -346,8 +385,30 @@ void squareSum(float* map, float* partOfNorm, int numFeatures, int num, int size
 
 void normalization(float *map, float* partOfNorm, float * newData, cv::Size size, float alfa)
 {
-    dim3 threads(32, 1, 1);
-    dim3 blocks((size.width + 31) / 32, size.height, NUM_SECTOR);
+    // dim3 threads(32, 1, 1);
+    // dim3 blocks((size.width + 31) / 32, size.height, NUM_SECTOR);
+    int width = size.width + 2;
+    int height = size.height + 2;
+    int thread_x, thread_y, block_x, block_y;
+
+    if(width > 128){
+        thread_x = 128;
+        thread_y = 3;
+        block_x = (width + 125) / 126;
+        block_y = height;
+    }else{
+        thread_y = 128 / width;
+        thread_x = 128 / thread_y;
+        block_x = 1;
+        block_y = (height + thread_y - 1) / thread_y;
+    }
+
+    thread_x = 32;
+    thread_y = 4;
+    block_x = (width + 30 - 1) / 30;
+    block_y = (height + 2 - 1) / 2;
+    dim3 threads(32, 4, 1);
+    dim3 blocks(block_x, block_y, NUM_SECTOR);
 
     d_normalization<<<blocks, threads>>>(map, partOfNorm, newData, size, alfa);
 }

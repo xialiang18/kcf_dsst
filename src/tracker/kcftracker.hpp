@@ -94,7 +94,7 @@ class KCFTracker : public Tracker
 {
   typedef enum SEARCH_METHOD{
     INIT_SEARCH = 1,
-    PART_SEARCH = 1,
+    PART_SEARCH = 3,
     ALL_SEARCH
   }SEARCH_METHOD;
 public:

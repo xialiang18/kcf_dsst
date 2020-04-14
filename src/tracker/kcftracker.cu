@@ -85,8 +85,9 @@ void getLabFeatures(cv::Size z, int cell_size, unsigned char *input, float *out,
         block_x = (width + 127) / 128;
         block_y = height;
     }else{
-        thread_x = width;
+        //thread_x = width;
         thread_y = 128 / width;
+        thread_x = 128 / thread_y;
         block_x = 1;
         block_y = (height + thread_y - 1) / thread_y;
     }
